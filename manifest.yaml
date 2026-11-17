@@ -1,0 +1,17 @@
+manifestVersion: 1
+name: "@keeb/ignav"
+version: "2026.11.17.1"
+description: "Flight fares from Ignav, for answering \"which flight gets me there in time\": search one-way legs by route and date, filtered by airline, nonstop and departure/arrival hour windows; fan out over every outbound and return candidate of a trip in one execution; and get the airline's booking link for the flight you pick. Times are stored local to each airport with timezone and UTC."
+license: MIT
+repository: https://github.com/keeb/swamp-ignav
+labels:
+  - flights
+  - travel
+  - fares
+  - ignav
+platforms: []
+additionalFiles:
+  - README.md
+  - LICENSE.txt
+models:
+  - ignav.ts
