@@ -7,7 +7,13 @@ import { legBody, model, toOption } from "./ignav.ts";
 
 const globalArgs = { apiKey: "test-key", baseUrl: "https://ignav.example.com" };
 
-function segment(flight: string, dep: string, arr: string, from = "SFO", to = "BOS") {
+function segment(
+  flight: string,
+  dep: string,
+  arr: string,
+  from = "SFO",
+  to = "BOS",
+) {
   return {
     marketing_carrier_code: "UA",
     flight_number: flight,
@@ -244,6 +250,47 @@ Deno.test("search_legs: one resource per leg, a digest, and a failed leg recorde
   assertEquals(digest.legs[0].cheapest, 380);
   assertEquals(digest.legs[0].flights, ["UA371", "UA796"]);
   assertEquals(typeof digest.legs[1].error, "string");
+});
+
+Deno.test("search_legs: a rejected key fails the run and writes nothing", async () => {
+  const { context, getWrittenResources } = createModelTestContext({
+    globalArgs: { ...globalArgs, apiKey: "wrong" },
+  });
+  await assertRejects(
+    () =>
+      withMockedFetch(
+        api(() => Response.json({ itineraries: [] })),
+        () =>
+          model.methods.search_legs.execute({
+            legs: [{ key: "out", ...leg }, { key: "back", ...leg }],
+            concurrency: 1,
+            label: "t",
+          }, context as never),
+      ),
+    Error,
+    "invalid_api_key",
+  );
+  assertEquals(getWrittenResources().length, 0);
+});
+
+Deno.test("search_legs: a label that is also a leg key throws before any request", async () => {
+  const seen: { path: string; body: Record<string, unknown> }[] = [];
+  const { context } = createModelTestContext({ globalArgs });
+  await assertRejects(
+    () =>
+      withMockedFetch(
+        api(() => Response.json({ itineraries: [] }), seen),
+        () =>
+          model.methods.search_legs.execute({
+            legs: [{ key: "boston", ...leg }],
+            concurrency: 1,
+            label: "boston",
+          }, context as never),
+      ),
+    Error,
+    "also a leg key",
+  );
+  assertEquals(seen.length, 0);
 });
 
 Deno.test("search_legs: duplicate keys throw before any request", async () => {

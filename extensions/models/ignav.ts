@@ -424,6 +424,13 @@ export const model = {
         if (keys.size !== args.legs.length) {
           throw new Error("leg keys must be unique");
         }
+        // swamp data names are unique per run across specs, so the digest
+        // (trip/<label>) cannot share a name with a leg (fares/<key>).
+        if (keys.has(args.label)) {
+          throw new Error(
+            `label "${args.label}" is also a leg key; give the digest a different name`,
+          );
+        }
         context.logger.info("Searching {n} legs on Ignav", {
           n: args.legs.length,
         });
@@ -431,17 +438,31 @@ export const model = {
         const handles: Awaited<ReturnType<typeof context.writeResource>>[] = [];
         let writes: Promise<unknown> = Promise.resolve();
         let next = 0;
+        let fatal: IgnavError | null = null;
         await Promise.all(
           Array.from(
             { length: Math.min(args.concurrency, args.legs.length) },
             async () => {
-              while (next < args.legs.length) {
+              while (next < args.legs.length && !fatal) {
                 const i = next++;
                 const { key, ...leg } = args.legs[i];
                 let r: Fares;
                 try {
                   r = await searchLeg(context, key, leg);
                 } catch (e) {
+                  // Key, billing and spend-limit errors fail every leg alike:
+                  // stop and fail the run instead of recording them per leg.
+                  if (
+                    e instanceof IgnavError &&
+                    [401, 402, 403, 429].includes(e.status)
+                  ) {
+                    fatal = e;
+                    return;
+                  }
+                  context.logger.warn("Leg {key} failed: {error}", {
+                    key,
+                    error: (e as Error).message,
+                  });
                   r = {
                     generatedAt: new Date().toISOString(),
                     key,
@@ -461,6 +482,7 @@ export const model = {
           ),
         );
         await writes;
+        if (fatal) throw fatal;
         const legs = results.map((r) => {
           const arrivals = r.options.map((o) => o.arriveLocal).filter((
             a,
@@ -532,6 +554,9 @@ export const model = {
             "pass `ignavId`, or all of origin, destination, date, carrier and flightNumber",
           );
         }
+        context.logger.info("Ignav booking links for {lookup}", {
+          lookup: Object.values(lookup).join(" "),
+        });
         const body = await ignav(context, "/fares/booking-links", request);
         const links = ((body.booking_options as Doc[]) ?? []).flatMap((o) =>
           ((o.links as Doc[]) ?? []).map((l) => ({
